@@ -2,7 +2,6 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)  
 [![Version](https://img.shields.io/badge/version-1.0-blue)](https://github.com/<yourusername>/<yourapp>)
-📦 [Download the latest release](https://github.com/Kveresg/ScaraRobot-App/releases/latest)
 
 **ScaraRobot-App** is a Python-based application for Linux (WIP Windows).  
 It includes an **interactive installer** that can:
@@ -12,6 +11,8 @@ It includes an **interactive installer** that can:
 - Enable/start the service automatically if desired  
 
 Works on **Ubuntu, Debian, Fedora, Arch, openSUSE**, and most major Linux distributions.
+
+📦 [Download the latest release](https://github.com/Kveresg/ScaraRobot-App/releases/latest)
 
 ---
 
