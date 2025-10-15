@@ -25,7 +25,7 @@ command_queue = queue.Queue()
 angle_text_ids = {}
 last_send_time = time.time()
 stop_thread_flag = threading.Event()
-elbow_up_config = True # True means right bend (default)
+elbow_up_config = True # True means right bend (default)asd
 
 # Joystick State
 joystick = None
