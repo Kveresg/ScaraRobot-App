@@ -1,11 +1,11 @@
 import tkinter as tk
 import math
 import serial
+import serial.tools.list_ports # New import for finding ports
 import threading
 import time
 import queue
 import os
-import sys
 import contextlib
 
 # Suppress pygame startup message/output
@@ -26,6 +26,7 @@ angle_text_ids = {}
 last_send_time = time.time()
 stop_thread_flag = threading.Event()
 elbow_up_config = True # True means right bend (default)
+serial_status_label = None # To display connection status
 
 # Joystick State
 joystick = None
@@ -55,46 +56,131 @@ MIN_GEOMETRIC_REACH = abs(L1 - L2)
 L1_MAX_ANGLE_DEG = 249 * (90 / 200)
 L2_MIN_REACH_ANGLE_DEG = 649 * (90 / 200)
 
-# --- SERIAL SETUP ---
-try:
-    ser = serial.Serial(SERIAL_PORT, BAUDRATE, timeout=1)
-except Exception as e:
-    print(f"Serial port error: {e}. Running in simulation mode.")
-    ser = None
+# --- SERIAL AUTOCONNECTION LOGIC ---
+
+def update_serial_status(status_text, color):
+    """Updates the dedicated Tkinter label for serial connection status."""
+    if serial_status_label:
+        serial_status_label.config(text=f"Serial Status: {status_text}", fg=color)
+
+def find_serial_port():
+    """Scans for ports and prioritizes common Linux microcontroller devices."""
+    ports = serial.tools.list_ports.comports()
+    
+    # Priority check for common Linux Arduino/ESP device names
+    for port in ports:
+        if port.device.startswith('/dev/ttyACM') or port.device.startswith('/dev/ttyUSB'):
+            # You can add more specific checks here (e.g., matching VID/PID)
+            print(f"Found potential device at: {port.device}")
+            return port.device
+            
+    # Fallback to any available port if specific names aren't found
+    if ports:
+        print(f"Found fallback device at: {ports[0].device}")
+        return ports[0].device
+        
+    return None
+
+def serial_manager_thread():
+    """Manages the connection state, continuously searching and reconnecting."""
+    global ser, stop_thread_flag
+    
+    while not stop_thread_flag.is_set():
+        if ser is None or not ser.is_open:
+            update_serial_status("Searching...", "orange")
+            print("Searching for serial port...")
+            
+            port_path = find_serial_port()
+
+            if port_path:
+                print(f"Port found: {port_path}. Attempting connection...")
+                try:
+                    # Attempt connection
+                    ser = serial.Serial(port_path, BAUDRATE, timeout=1)
+                    update_serial_status(f"Connected to {port_path}", "green")
+                    print(f"Successfully connected to {port_path}")
+                    # Give the device a moment to reboot/initialize after connecting
+                    time.sleep(1.5) 
+                except serial.SerialException as e:
+                    update_serial_status("Connection Failed", "red")
+                    print(f"Failed to connect to {port_path}: {e}")
+                    ser = None # Ensure global state is clear
+                    time.sleep(2) # Wait before next retry
+
+            else:
+                update_serial_status("Not Found", "red")
+                # No port found, keep waiting and searching
+                time.sleep(5)
+        else:
+            # Successfully connected, just wait and let reader/writer handle traffic
+            time.sleep(1)
 
 def serial_reader_thread():
-    """Continuously reads incoming serial messages from ESP32 and logs them."""
+    """Continuously reads incoming serial messages and handles disconnection."""
+    global ser
     while not stop_thread_flag.is_set():
         try:
-            if ser and ser.in_waiting:
-                line = ser.readline().decode(errors='ignore').strip()
-                if line:
-                    print(f"ESP32: {line}")
+            # Only attempt to read if the serial port is open
+            if ser and ser.is_open:
+                if ser.in_waiting:
+                    line = ser.readline().decode(errors='ignore').strip()
+                    if line:
+                        print(f"ESP32: {line}")
+            else:
+                 time.sleep(0.01) # Short wait if port is not ready
+        
+        except serial.SerialException as e:
+            # Disconnection detected (cable pull, device crash)
+            print(f"Serial reader detected disconnection: {e}. Notifying manager...")
+            update_serial_status("DISCONNECTED", "red")
+            if ser:
+                ser.close()
+            ser = None # Signal manager thread to begin scan/reconnect
+            time.sleep(0.5) # Prevent high CPU usage during disconnect state
+        
         except Exception as e:
             print(f"Error in serial reader: {e}")
-        time.sleep(0.01)
+            time.sleep(0.01)
 
 def serial_writer_thread():
-    """Dedicated thread to safely send commands to the serial port."""
+    """Dedicated thread to safely send commands and handles disconnection."""
+    global ser
     while not stop_thread_flag.is_set():
         try:
             command = command_queue.get(timeout=0.1)
+            
             if ser and ser.is_open:
+                # Use a short timeout here to avoid blocking indefinitely if a disconnect occurs right before writing
                 ser.write((command + "\n").encode())
                 print(f"Sent: {command}")
             else:
                 if command != "heartbeat":
-                    print(f"SIMULATED SEND: {command}")
+                    print(f"SIMULATED SEND: {command} (No port connected)")
+            
             command_queue.task_done()
+        
         except queue.Empty:
             continue
+            
+        except serial.SerialException as e:
+            # Disconnection detected during writing
+            print(f"Serial writer detected disconnection: {e}. Notifying manager...")
+            update_serial_status("DISCONNECTED", "red")
+            if ser:
+                ser.close()
+            ser = None # Signal manager thread to begin scan/reconnect
+            time.sleep(0.5)
+            
         except Exception as e:
             print(f"Error in serial thread: {e}")
 
 def start_serial_thread():
-    """Initializes and starts the serial communication threads."""
+    """Initializes and starts all three serial communication threads."""
+    manager = threading.Thread(target=serial_manager_thread, daemon=True)
     worker = threading.Thread(target=serial_writer_thread, daemon=True)
     reader = threading.Thread(target=serial_reader_thread, daemon=True)
+    
+    manager.start()
     worker.start()
     reader.start()
 
@@ -585,6 +671,12 @@ def redraw_ui():
 
 # --- TKINTER WIDGETS ---
 def create_command_buttons(frame):
+    global serial_status_label
+    
+    # Status Label (New)
+    serial_status_label = tk.Label(frame, text="Serial Status: Initializing...", font=("Arial", 10, "bold"), fg="black")
+    serial_status_label.grid(row=0, column=0, columnspan=3, pady=(0, 10))
+
     btn_calibrate = tk.Button(frame, text="Calibrate (Select)", width=15, command=calibration_command, relief=tk.RAISED, bg='#e0f7fa', activebackground='#b2ebf2')
     btn_home = tk.Button(frame, text="Home (Start)", width=15, command=home_command, relief=tk.RAISED, bg='#e8f5e9', activebackground='#c8e6c9')
     btn_stop = tk.Button(frame, text="Stop", width=15, command=lambda: send_serial_command("stop"), relief=tk.RAISED, bg='#ffebee', activebackground='#ffcdd2')
@@ -627,15 +719,15 @@ def create_command_buttons(frame):
     )
     joystick_speed_slider.set(joystick_move_step_value) # Set initial value
 
-    btn_calibrate.grid(row=0, column=0, padx=5, pady=5)
-    btn_home.grid(row=0, column=1, padx=5, pady=5)
-    btn_stop.grid(row=0, column=2, padx=5, pady=5)
+    btn_calibrate.grid(row=1, column=0, padx=5, pady=5)
+    btn_home.grid(row=1, column=1, padx=5, pady=5)
+    btn_stop.grid(row=1, column=2, padx=5, pady=5)
 
-    btn_open.grid(row=1, column=0, padx=5, pady=5)
-    btn_close.grid(row=1, column=1, padx=5, pady=5)
-    elbow_button.grid(row=1, column=2, padx=5, pady=5)
+    btn_open.grid(row=2, column=0, padx=5, pady=5)
+    btn_close.grid(row=2, column=1, padx=5, pady=5)
+    elbow_button.grid(row=2, column=2, padx=5, pady=5)
 
-    config_frame.grid(row=2, column=0, columnspan=3, pady=10)
+    config_frame.grid(row=3, column=0, columnspan=3, pady=10)
     
     speed_label.grid(row=0, column=0, padx=2, pady=2, sticky="e")
     speed_entry.grid(row=0, column=1, padx=2, pady=2)
