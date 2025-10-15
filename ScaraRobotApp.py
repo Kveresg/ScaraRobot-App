@@ -13,7 +13,6 @@ with open(os.devnull, "w") as f, contextlib.redirect_stdout(f):
     import pygame
 
 # --- CONFIGURATION ---
-SERIAL_PORT = "COM8"
 BAUDRATE = 115200
 MOTION_SEND_INTERVAL = 0.05 # Throttle: Send motion command every 50ms (20 FPS target)
 JOYSTICK_POLL_INTERVAL = 50 # Milliseconds between joystick checks (20 Hz)
@@ -66,6 +65,8 @@ def update_serial_status(status_text, color):
 def find_serial_port():
     """Scans for ports and prioritizes common Linux microcontroller devices."""
     ports = serial.tools.list_ports.comports()
+
+    ports = [port for port in ports if port.device != '/dev/ttyAMA0'] # Ignore Raspberry Pi default serial port
     
     # Priority check for common Linux Arduino/ESP device names
     for port in ports:
