@@ -29,10 +29,11 @@ elbow_up_config = True # True means right bend (default)
 
 # Joystick State
 joystick = None
-axis_states = {0: 0.0, 4: 0.0} # Axis 0 (X), Axis 4 (Y) for D-pad/Left Stick
+axis_states = {0: 0.0, 4: 0.0} # 4: 0.0 is for windows and 1:0.0 is for linux for some reason
+
 joystick_active_movement = False # Flag to stop joystick movement overriding mouse
 current_target_x, current_target_y = 0, 0 # Target position in Canvas coordinates
-joystick_move_step_value = 10 # NEW: Global state for joystick speed (pixels per step)
+joystick_move_step_value = 2 # NEW: Global state for joystick speed (pixels per step)
 
 z_axis_movement = {
     'up': False,    # Right Bumper (Button 5)
@@ -190,7 +191,7 @@ def check_joystick():
         return
 
     x_axis_val = axis_states.get(0, 0.0)
-    y_axis_val = axis_states.get(4, 0.0) # Using axis 4 as defined in the original handler
+    y_axis_val = axis_states.get(1, 0.0) # On WINDOWS it is get(4, 0.0) and get(1, 0.0) is for LINUX for some reason
 
     is_moving = abs(x_axis_val) > JOYSTICK_DEADZONE or abs(y_axis_val) > JOYSTICK_DEADZONE
     
