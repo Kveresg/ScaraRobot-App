@@ -3,7 +3,7 @@ import math
 import serial
 import threading
 import time
-import queue # Import for thread-safe queue
+import queue
 import os
 import sys
 import contextlib
@@ -25,7 +25,7 @@ command_queue = queue.Queue()
 angle_text_ids = {}
 last_send_time = time.time()
 stop_thread_flag = threading.Event()
-elbow_up_config = True # True means right bend (default)asd
+elbow_up_config = True # True means right bend (default)
 
 # Joystick State
 joystick = None
@@ -34,7 +34,6 @@ joystick_active_movement = False # Flag to stop joystick movement overriding mou
 current_target_x, current_target_y = 0, 0 # Target position in Canvas coordinates
 joystick_move_step_value = 10 # NEW: Global state for joystick speed (pixels per step)
 
-# New state for continuous Z movement (Bumpers)
 z_axis_movement = {
     'up': False,    # Right Bumper (Button 5)
     'down': False   # Left Bumper (Button 4)
@@ -43,16 +42,16 @@ z_axis_movement = {
 # IK Arm Lengths (must match the original arm configuration)
 L1 = 91.6
 L2 = 121.6
+
 CANVAS_WIDTH, CANVAS_HEIGHT = 600, 600
 radius = L1 + L2
 center_x, center_y = CANVAS_WIDTH // 2, CANVAS_HEIGHT // 2 + 100 # Base pivot point
+
 # Physical Inner Stop Radius (~75.0)
 MIN_REACH = abs(L1 + 105 - L2)
-# Geometric Minimum Reach Radius (L2 folded straight back on L1) (~30.0)
+
 MIN_GEOMETRIC_REACH = abs(L1 - L2)
-
 L1_MAX_ANGLE_DEG = 249 * (90 / 200)
-
 L2_MIN_REACH_ANGLE_DEG = 649 * (90 / 200)
 
 # --- SERIAL SETUP ---
@@ -172,7 +171,6 @@ def check_joystick():
 
         # --- BUTTON UP ACTIONS ---
         elif event.type == pygame.JOYBUTTONUP:
-            # Handle continuous Z movement stop
             if event.button == 4: # Left Bumper
                 z_axis_movement['down'] = False
             elif event.button == 5: # Right Bumper
@@ -187,26 +185,17 @@ def check_joystick():
     
     if is_moving:
         joystick_active_movement = True
-        
-        # Calculate proposed new target position using the global step value
         dx = int(x_axis_val * joystick_move_step_value)
-        # Corrected: Joystick UP (negative axis value) should result in movement UP (negative dy)
         dy = int(y_axis_val * joystick_move_step_value) 
         
         proposed_target_x = current_target_x + dx
         proposed_target_y = current_target_y + dy
 
-        # Clamp movement to the canvas boundaries
         proposed_target_x = max(0, min(CANVAS_WIDTH, proposed_target_x))
         proposed_target_y = max(0, min(CANVAS_HEIGHT, proposed_target_y))
         
-        # Only try to move if the proposed target is different from the current
         if proposed_target_x != current_target_x or proposed_target_y != current_target_y:
-            
-            # ATTEMPT IK AND MOVE - This function will only update global state if successful
             move_successful = try_move_ik(proposed_target_x, proposed_target_y)
-            
-            # IMPORTANT: ONLY update the global target if the move was kinematically valid.
             if move_successful:
                 current_target_x = proposed_target_x
                 current_target_y = proposed_target_y
@@ -217,7 +206,6 @@ def check_joystick():
     # --- CONTINUOUS Z-AXIS MOVEMENT LOGIC (Bumper Control) ---
     is_z_moving = z_axis_movement['up'] or z_axis_movement['down']
     
-    # Send Z command if a bumper is held AND the throttle time allows it (even if IK just ran)
     current_time = time.time()
     if is_z_moving and current_time - last_send_time >= MOTION_SEND_INTERVAL:
         if z_axis_movement['up']: # Right Bumper
@@ -227,7 +215,6 @@ def check_joystick():
             send_serial_command("relmove 0 0 -5") # Z-DOWN 
             last_send_time = current_time
 
-    # Re-queue the check function
     root.after(JOYSTICK_POLL_INTERVAL, check_joystick)
 
 # --- UTILITY FUNCTIONS ---
@@ -235,12 +222,10 @@ def inverse_kinematics(tx, ty, L1, L2):
     global elbow_up_config
 
     d = math.sqrt(tx**2 + ty**2)
-    # This check ensures the target is within the overall geometric reach (max/min straight arm)
     if d > L1 + L2 or d < abs(L1 - L2):
         return None, None
 
     cos_theta2 = (tx**2 + ty**2 - L1**2 - L2**2) / (2 * L1 * L2)
-    # Clamp cos_theta2 to [-1, 1] to handle floating-point errors
     cos_theta2 = max(-1.0, min(1.0, cos_theta2))
 
     if elbow_up_config:
@@ -284,7 +269,6 @@ def send_serial_command(command):
     command_queue.put(command)
 
 # --- CORE IK & SEND LOGIC (Refactored) ---
-
 def inverse_map_angle_L1(mapped_steps):
     """Inverse of map_angle_L1: converts motor steps back to degrees."""
     return (90 / 200) * mapped_steps
@@ -430,9 +414,8 @@ def run_ik_and_send():
     try_move_ik(current_target_x, current_target_y)
 
 # --- EVENT HANDLERS FOR CONFIGURATION ---
-
 def send_speed(speed_entry):
-    root.focus_set() # Remove focus from entry field
+    root.focus_set()
     try:
         speed_val = int(speed_entry.get())
         send_serial_command(f"set_speed {speed_val}")
@@ -440,7 +423,7 @@ def send_speed(speed_entry):
         print("Invalid speed value")
 
 def send_accel(accel_entry):
-    root.focus_set() # Remove focus from entry field
+    root.focus_set()
     try:
         accel_val = int(accel_entry.get())
         send_serial_command(f"set_accel {accel_val}")
@@ -448,7 +431,7 @@ def send_accel(accel_entry):
         print("Invalid accel value")
 
 def send_tolerance(tolerance_entry):
-    root.focus_set() # Remove focus from entry field
+    root.focus_set()
     try:
         tol_val = int(tolerance_entry.get())
         send_serial_command(f"set_tolerance {tol_val}")
@@ -459,29 +442,23 @@ def update_joystick_move_step(value):
     """Updates the global joystick movement step based on the slider value."""
     global joystick_move_step_value
     try:
-        # Tkinter Scale returns a string representation of a float
         joystick_move_step_value = int(float(value)) 
         print(f"Gamepad speed set to: {joystick_move_step_value}")
     except ValueError:
         print("Invalid speed value from slider")
 
 # --- OTHER EVENT HANDLERS ---
-
 def on_mouse_motion(event):
     """
     Handles mouse click/motion. Only update the target if joystick is inactive.
     """
     global current_target_x, current_target_y
-
-    # If the joystick is actively sending movement commands, ignore the mouse motion.
     if joystick_active_movement:
         return
-
-    # Store proposed target based on mouse position
+    
     proposed_target_x = event.x
     proposed_target_y = event.y
 
-    # Run the core IK logic. If successful, update the global target state.
     if try_move_ik(proposed_target_x, proposed_target_y):
         current_target_x = proposed_target_x
         current_target_y = proposed_target_y
@@ -489,7 +466,6 @@ def on_mouse_motion(event):
 
 def on_scroll(event):
     """Handles mouse scroll for Z-axis control (relmove 0 0 Z)."""
-    # Mouse scroll still works for single steps, even with continuous bumper control
     if event.delta > 0:
         send_serial_command("relmove 0 0 5")
     else:
@@ -514,7 +490,6 @@ def toggle_elbow_direction(event=None):
     run_ik_and_send() # Re-calculate IK with new elbow configuration
 
 # --- UI DRAWING FUNCTIONS ---
-
 def draw_workspace_visualization():
     """
     Draws the visual boundaries of the robot arm workspace based on L1 motor limits,
@@ -529,8 +504,6 @@ def draw_workspace_visualization():
                    start=L1_start_angle, extent=L1_extent_angle,
                    outline="#003366", width=2, fill="lightblue", tags="outer_boundary")
     
-    # canvas.create_oval(center_x - MIN_REACH, center_y - MIN_REACH, center_x + MIN_REACH, center_y + MIN_REACH, outline="#cc0000", fill="#FF6666", tags="unreachable_zone_fill_physical")
-    
     canvas.create_arc(center_x - MIN_REACH, center_y - MIN_REACH,
                    center_x + MIN_REACH, center_y + MIN_REACH,
                    start=L1_start_angle, extent=L1_extent_angle,
@@ -538,15 +511,14 @@ def draw_workspace_visualization():
 
     angle_rad = math.radians(L1_start_angle)
     elbow_y = center_y - L1 * math.sin(angle_rad)
+
     # L1 - 7 is because of the oval on L1's end
     canvas.create_arc(center_x + L1 - 7 - L2, elbow_y   - L2,
                    center_x + L1 - 7 + L2, elbow_y  + L2,
                    start=L1_start_angle, extent=-90,
                    outline="#ff4d00", width=2, fill="#ffae00", tags="outer_boundary")
     
-    # L1 + 7 is because of the oval on L1's end (the other side)
-    # print(elbow_y)
-    
+    # L1 + 7 is because of the oval on L1's end (the other side) 
     canvas.create_arc(center_x - L1 + 7  - L2, elbow_y  - L2,
                    center_x - L1 + 7 + L2, elbow_y + L2,
                    start=L1_start_angle+L1_extent_angle, extent=90,
@@ -560,9 +532,7 @@ def draw_workspace_visualization():
     x_limit_2 = center_x + radius * math.cos(limit_angle_rad_2)
     y_limit_2 = center_y - radius * math.sin(limit_angle_rad_2)
     
-    # Draw the right side limit line
     canvas.create_line(center_x, center_y, x_limit_1, y_limit_1, fill="#003366", width=1, tags="limit_line_1")
-    # Draw the left side limit line
     canvas.create_line(center_x, center_y, x_limit_2, y_limit_2, fill="#003366", width=1, tags="limit_line_2")
 
 
@@ -571,13 +541,12 @@ def draw_arm(x1, y1, x2, y2):
     canvas.create_line(center_x, center_y, x1, y1, width=8, fill="#0033aa", capstyle=tk.ROUND, tags="arm_L1")
     # Link 2 (Elbow to End-Effector)
     canvas.create_line(x1, y1, x2, y2, width=8, fill="#ff6600", capstyle=tk.ROUND, tags="arm_L2")
-    # Joints and End-Effector
+
     canvas.create_oval(x1 - 8, y1 - 8, x1 + 8, y1 + 8, fill="#00aa00", outline="#000") # Elbow Joint
     canvas.create_oval(x2 - 8, y2 - 8, x2 + 8, y2 + 8, fill="#ffd700", outline="#000") # End Effector
     canvas.create_oval(center_x - 10, center_y - 10, center_x + 10, center_y + 10, fill="#000", outline="#fff", width=2) # Base
 
 def draw_texts(angle_L1=0.0, angle_L2=0.0, mapped_L1=0.0, mapped_L2=0.0):
-    # This function draws or updates the text labels on the canvas
     texts = {
         "L1_angle": f"L1 angle: {angle_L1:.2f}°",
         "L1_mapped": f"L1 mapped: {mapped_L1:.0f} (Max: +/- 249)",
@@ -598,19 +567,14 @@ def draw_texts(angle_L1=0.0, angle_L2=0.0, mapped_L1=0.0, mapped_L2=0.0):
 def redraw_ui():
     """Sets the target to the home position and runs IK/draws."""
     global current_target_x, current_target_y
-    # This is a fixed point at the top of the reachable area
     current_target_x = center_x
     current_target_y = center_y - (L1 + L2)
-
-    # Force the IK run for the home position
     run_ik_and_send()
 
 
 # --- TKINTER WIDGETS ---
-
 def create_command_buttons(frame):
-    # Updated button labels to reflect new joystick mappings
-    btn_calibrate = tk.Button(frame, text="Calibrate (Back)", width=15, command=calibration_command, relief=tk.RAISED, bg='#e0f7fa', activebackground='#b2ebf2')
+    btn_calibrate = tk.Button(frame, text="Calibrate (Select)", width=15, command=calibration_command, relief=tk.RAISED, bg='#e0f7fa', activebackground='#b2ebf2')
     btn_home = tk.Button(frame, text="Home (Start)", width=15, command=home_command, relief=tk.RAISED, bg='#e8f5e9', activebackground='#c8e6c9')
     btn_stop = tk.Button(frame, text="Stop", width=15, command=lambda: send_serial_command("stop"), relief=tk.RAISED, bg='#ffebee', activebackground='#ffcdd2')
     
@@ -622,22 +586,19 @@ def create_command_buttons(frame):
     global elbow_button
     initial_state = "Right Bend" if elbow_up_config else "Left Bend"
     # Mapped to A button (Button 1)
-    elbow_button = tk.Button(frame, text=f"Elbow: {initial_state} (A)", width=15, command=toggle_elbow_direction, relief=tk.RAISED, bg='#f3e5f5', activebackground='#e1bee7')
+    elbow_button = tk.Button(frame, text=f"Elbow: {initial_state} (A)", width=20, command=toggle_elbow_direction, relief=tk.RAISED, bg='#f3e5f5', activebackground='#e1bee7')
 
-    # Create dummy frame for entry widgets
+    # Dummy frame for entry widgets
     config_frame = tk.Frame(frame, bd=1, relief=tk.GROOVE, padx=5, pady=5)
 
-    # Speed controls
     speed_label = tk.Label(config_frame, text="Speed:")
     speed_entry = tk.Entry(config_frame, width=6); speed_entry.insert(0, "40000")
     btn_set_speed = tk.Button(config_frame, text="Set Speed", width=12, command=lambda: send_speed(speed_entry))
 
-    # Acceleration controls
     accel_label = tk.Label(config_frame, text="Accel:")
     accel_entry = tk.Entry(config_frame, width=6); accel_entry.insert(0, "20000")
     btn_set_accel = tk.Button(config_frame, text="Set Accel", width=12, command=lambda: send_accel(accel_entry))
 
-    # Tolerance controls
     tolerance_label = tk.Label(config_frame, text="Tolerance:")
     tolerance_entry = tk.Entry(config_frame, width=6); tolerance_entry.insert(0, "10") # Default tolerance
     btn_set_tolerance = tk.Button(config_frame, text="Set Tolerance", width=12, command=lambda: send_tolerance(tolerance_entry))
@@ -655,7 +616,6 @@ def create_command_buttons(frame):
     )
     joystick_speed_slider.set(joystick_move_step_value) # Set initial value
 
-    # Layout for main buttons
     btn_calibrate.grid(row=0, column=0, padx=5, pady=5)
     btn_home.grid(row=0, column=1, padx=5, pady=5)
     btn_stop.grid(row=0, column=2, padx=5, pady=5)
@@ -664,31 +624,25 @@ def create_command_buttons(frame):
     btn_close.grid(row=1, column=1, padx=5, pady=5)
     elbow_button.grid(row=1, column=2, padx=5, pady=5)
 
-    # Layout for configuration entries (using rows 0, 1, 2, 3 inside config_frame)
     config_frame.grid(row=2, column=0, columnspan=3, pady=10)
     
-    # Row 0: Speed
     speed_label.grid(row=0, column=0, padx=2, pady=2, sticky="e")
     speed_entry.grid(row=0, column=1, padx=2, pady=2)
     btn_set_speed.grid(row=0, column=2, padx=5, pady=2)
 
-    # Row 1: Acceleration
     accel_label.grid(row=1, column=0, padx=2, pady=2, sticky="e")
     accel_entry.grid(row=1, column=1, padx=2, pady=2)
     btn_set_accel.grid(row=1, column=2, padx=5, pady=2)
 
-    # Row 2: Tolerance
     tolerance_label.grid(row=2, column=0, padx=2, pady=2, sticky="e")
     tolerance_entry.grid(row=2, column=1, padx=2, pady=2)
     btn_set_tolerance.grid(row=2, column=2, padx=5, pady=2)
     
-    # Row 3: Joystick Speed Slider
     slider_label.grid(row=3, column=0, padx=2, pady=5, sticky="w")
     joystick_speed_slider.grid(row=3, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
 
 
 # --- TKINTER SETUP ---
-
 root = tk.Tk()
 root.title("SCARA Robot Arm (Mouse + Gamepad Control)")
 root.protocol("WM_DELETE_WINDOW", on_closing)
