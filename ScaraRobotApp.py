@@ -27,9 +27,20 @@ stop_thread_flag = threading.Event()
 elbow_up_config = True # True means right bend (default)
 serial_status_label = None # To display connection status
 
+os_type = None
+if os.name == "posix":
+    os_type = "linux"
+elif os.name == "nt":
+    os_type = "windows"
+else:
+    os_type = "unknown"
+
 # Joystick State
 joystick = None
-axis_states = {0: 0.0, 1: 0.0} # 4: 0.0 is for windows and 1:0.0 is for linux for some reason
+if os_type == "linux":
+    axis_states = {0: 0.0, 1: 0.0} # 1: 0.0 is for linux
+else:  # Assume Windows or other OS
+    axis_states = {0: 0.0, 4: 0.0} # 4: 0.0 is for windows and 1:0.0 is for linux for some reason
 
 joystick_active_movement = False # Flag to stop joystick movement overriding mouse
 current_target_x, current_target_y = 0, 0 # Target position in Canvas coordinates
@@ -280,7 +291,11 @@ def check_joystick():
         return
 
     x_axis_val = axis_states.get(0, 0.0)
-    y_axis_val = axis_states.get(1, 0.0) # On WINDOWS it is get(4, 0.0) and get(1, 0.0) is for LINUX for some reason
+    
+    if os_type == "linux":
+        y_axis_val = axis_states.get(1, 0.0) # Linux
+    else:
+        y_axis_val = axis_states.get(4, 0.0) # On WINDOWS it is get(4, 0.0) and get(1, 0.0) is for LINUX for some reason
 
     is_moving = abs(x_axis_val) > JOYSTICK_DEADZONE or abs(y_axis_val) > JOYSTICK_DEADZONE
     
