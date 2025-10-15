@@ -56,7 +56,6 @@ L1_MAX_ANGLE_DEG = 249 * (90 / 200)
 L2_MIN_REACH_ANGLE_DEG = 649 * (90 / 200)
 
 # --- SERIAL AUTOCONNECTION LOGIC ---
-
 def update_serial_status(status_text, color):
     """Updates the dedicated Tkinter label for serial connection status."""
     if serial_status_label:
@@ -121,24 +120,26 @@ def serial_reader_thread():
     global ser
     while not stop_thread_flag.is_set():
         try:
-            # Only attempt to read if the serial port is open
             if ser and ser.is_open:
                 if ser.in_waiting:
                     line = ser.readline().decode(errors='ignore').strip()
                     if line:
                         print(f"ESP32: {line}")
             else:
-                 time.sleep(0.01) # Short wait if port is not ready
-        
-        except serial.SerialException as e:
-            # Disconnection detected (cable pull, device crash)
+                time.sleep(0.01)
+
+        except (serial.SerialException, OSError) as e:
+            # Handle disconnection on both Windows and Linux
             print(f"Serial reader detected disconnection: {e}. Notifying manager...")
             update_serial_status("DISCONNECTED", "red")
             if ser:
-                ser.close()
-            ser = None # Signal manager thread to begin scan/reconnect
-            time.sleep(0.5) # Prevent high CPU usage during disconnect state
-        
+                try:
+                    ser.close()
+                except Exception:
+                    pass
+            ser = None  # Signal manager to reconnect
+            time.sleep(0.5)  # Avoid CPU spin during retry
+
         except Exception as e:
             print(f"Error in serial reader: {e}")
             time.sleep(0.01)
@@ -151,7 +152,6 @@ def serial_writer_thread():
             command = command_queue.get(timeout=0.1)
             
             if ser and ser.is_open:
-                # Use a short timeout here to avoid blocking indefinitely if a disconnect occurs right before writing
                 ser.write((command + "\n").encode())
                 print(f"Sent: {command}")
             else:
@@ -163,13 +163,15 @@ def serial_writer_thread():
         except queue.Empty:
             continue
             
-        except serial.SerialException as e:
-            # Disconnection detected during writing
+        except (serial.SerialException, OSError) as e:
             print(f"Serial writer detected disconnection: {e}. Notifying manager...")
             update_serial_status("DISCONNECTED", "red")
             if ser:
-                ser.close()
-            ser = None # Signal manager thread to begin scan/reconnect
+                try:
+                    ser.close()
+                except Exception:
+                    pass
+            ser = None
             time.sleep(0.5)
             
         except Exception as e:
