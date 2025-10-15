@@ -29,7 +29,7 @@ serial_status_label = None # To display connection status
 
 # Joystick State
 joystick = None
-axis_states = {0: 0.0, 4: 0.0} # 4: 0.0 is for windows and 1:0.0 is for linux for some reason
+axis_states = {0: 0.0, 1: 0.0} # 4: 0.0 is for windows and 1:0.0 is for linux for some reason
 
 joystick_active_movement = False # Flag to stop joystick movement overriding mouse
 current_target_x, current_target_y = 0, 0 # Target position in Canvas coordinates
