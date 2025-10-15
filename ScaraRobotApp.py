@@ -127,23 +127,32 @@ def init_joystick():
 
 def check_joystick():
     """
-    Polls joystick events and updates the robot arm state.
+    Polls joystick events and updates the robot arm state, including hotplug detection.
     This function is called repeatedly by root.after().
     """
-    global axis_states, joystick_active_movement, current_target_x, current_target_y, last_send_time, z_axis_movement, joystick_move_step_value
+    global axis_states, joystick_active_movement, current_target_x, current_target_y, last_send_time, z_axis_movement, joystick_move_step_value, joystick
+    pygame.event.pump()
 
-    if not joystick:
+    if joystick is None and pygame.joystick.get_count() > 0:
+        print("Controller detected! Attempting initialization...")
+        init_joystick()
+    
+    if joystick is None:
         root.after(JOYSTICK_POLL_INTERVAL, check_joystick)
         return
 
-    # Process pending events from pygame
     for event in pygame.event.get():
+        if event.type == pygame.JOYDEVICEREMOVED:
+            print(f"Controller removed. Resetting joystick state.")
+            joystick = None
+            break # Exit event loop; the next loop iteration will hit the 'if joystick is None' block
+            
         # --- AXIS/D-pad MOVEMENT ---
         if event.type == pygame.JOYAXISMOTION:
             if event.axis in axis_states:
                 axis_states[event.axis] = event.value
 
-        # --- BUTTON DOWN ACTIONS (UPDATED FOR NEW MAPPING) ---
+        # --- BUTTON DOWN ACTIONS ---
         elif event.type == pygame.JOYBUTTONDOWN:
             if event.button == 0: # X button
                 send_serial_command("close_gripper")
@@ -161,7 +170,6 @@ def check_joystick():
                 calibration_command()
                 print("Back button (Calibrate) pressed")
             
-            # Continuous Z movement activation
             elif event.button == 4: # Left Bumper -> Z- AXIS DOWN
                 z_axis_movement['down'] = True
                 print("Left Bumper (Z- continuous down) activated")
@@ -176,8 +184,11 @@ def check_joystick():
             elif event.button == 5: # Right Bumper
                 z_axis_movement['up'] = False
             pass
+    
+    if joystick is None:
+        root.after(JOYSTICK_POLL_INTERVAL, check_joystick)
+        return
 
-    # --- CONTINUOUS AXIS MOVEMENT LOGIC (IK Control) ---
     x_axis_val = axis_states.get(0, 0.0)
     y_axis_val = axis_states.get(4, 0.0) # Using axis 4 as defined in the original handler
 
@@ -203,7 +214,6 @@ def check_joystick():
     else:
         joystick_active_movement = False # Release joystick control
     
-    # --- CONTINUOUS Z-AXIS MOVEMENT LOGIC (Bumper Control) ---
     is_z_moving = z_axis_movement['up'] or z_axis_movement['down']
     
     current_time = time.time()

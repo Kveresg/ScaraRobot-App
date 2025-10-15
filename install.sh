@@ -4,7 +4,7 @@ set -e
 APP_NAME="ScaraRobotApp"
 INSTALL_DIR="/usr/local/bin"
 SERVICE_FILE="/etc/systemd/system/${APP_NAME}.service"
-EXECUTABLE="dist/${APP_NAME}"
+PYTHON_SCRIPT="${APP_NAME}.py"  # Path to your .py script (change if needed)
 
 # -------------------------------
 # Helper Functions
@@ -68,7 +68,7 @@ Description=$APP_NAME Background Service
 After=network.target
 
 [Service]
-ExecStart=$INSTALL_DIR/$APP_NAME
+ExecStart=/usr/bin/python3 $INSTALL_DIR/$APP_NAME.py
 Restart=always
 User=$username
 WorkingDirectory=$INSTALL_DIR
@@ -98,16 +98,16 @@ else
     echo "✅ Python 3 detected: $(python3 -V)"
 fi
 
-# 2️⃣ Copy executable
-echo "📦 Installing executable..."
-if [ ! -f "$EXECUTABLE" ]; then
-    echo "❌ Executable not found at $EXECUTABLE"
-    echo "Please build your app first (e.g., with PyInstaller)."
+# 2️⃣ Copy Python script
+echo "📦 Installing Python script..."
+if [ ! -f "$PYTHON_SCRIPT" ]; then
+    echo "❌ Python script not found at $PYTHON_SCRIPT"
+    echo "Please make sure the file exists."
     exit 1
 fi
 
-sudo cp "$EXECUTABLE" "$INSTALL_DIR/$APP_NAME"
-sudo chmod +x "$INSTALL_DIR/$APP_NAME"
+sudo cp "$PYTHON_SCRIPT" "$INSTALL_DIR/$APP_NAME.py"
+sudo chmod 755 "$INSTALL_DIR/$APP_NAME.py"
 
 # 3️⃣ Optional systemd service
 if ask_yes_no "Would you like to install $APP_NAME as a systemd service?" "y"; then
@@ -127,8 +127,8 @@ else
 fi
 
 echo ""
-echo "🎉 $APP_NAME installation complete!"
-echo "Executable: $INSTALL_DIR/$APP_NAME"
+echo "✅ $APP_NAME installation complete!"
+echo "Script: $INSTALL_DIR/$APP_NAME.py"
 echo "Service file: $SERVICE_FILE (if installed)"
-echo "You can manage the service with: sudo systemctl {start|stop|status|enable|disable} $APP_NAME"
+echo "Manage the service with: sudo systemctl {start|stop|status|enable|disable} $APP_NAME"
 echo "Thank you for using $APP_NAME!"
